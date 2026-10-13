@@ -1,10 +1,6 @@
 """Contrato REST público das notas de manutenção (JSON em snake_case, enums legíveis).
 
-Independente do Zeep e dos códigos SAP: a tradução fica em ``mappers.py``.
-
-Semântica dos campos opcionais nas respostas (``response_model_exclude_unset``):
-chave **ausente** = elemento ausente no SOAP; ``null`` = ``xsi:nil``; ``""`` = elemento vazio.
-Coleções são sempre arrays (ausente e vazio têm o mesmo significado: zero itens).
+Independente do Zeep e dos códigos SAP: a tradução fica em ``service.py``.
 """
 
 from __future__ import annotations

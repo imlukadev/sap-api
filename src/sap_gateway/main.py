@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
-from sap_gateway.config import Settings, get_settings
+from sap_gateway.config import PACKAGED_WSDL, Settings, get_settings
 from sap_gateway.errors import install_error_handlers
 from sap_gateway.observability.middleware import RequestContextMiddleware
 from sap_gateway.observability.telemetry import Telemetry
@@ -16,18 +16,25 @@ from sap_gateway.routes import health
 from sap_gateway.services.maintenance_notification import contracts as notification_contracts
 from sap_gateway.services.maintenance_notification.router import router as notification_router
 from sap_gateway.services.maintenance_notification.service import NotificationService
-from sap_gateway.soap.gateway import SoapGateway
+from sap_gateway.soap.service import SoapService
 
 
 def create_app(
     settings: Settings | None = None,
     *,
     telemetry: Telemetry | None = None,
-    gateway: SoapGateway | None = None,
+    soap: SoapService | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     telemetry = telemetry or Telemetry(settings)
-    gateway = gateway or SoapGateway(settings, telemetry)
+    soap = soap or SoapService(
+        notification_contracts.SERVICE_KEY,
+        notification_contracts.BINDING,
+        settings.soap_service(notification_contracts.SERVICE_KEY),
+        default_wsdl=PACKAGED_WSDL / "maintenance_notification.wsdl",
+        telemetry=telemetry,
+        require_https=settings.environment not in {"local", "test"},
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -45,9 +52,8 @@ def create_app(
     )
     app.state.settings = settings
     app.state.telemetry = telemetry
-    app.state.gateway = gateway
-    app.state.service_keys = [notification_contracts.SERVICE.key]
-    app.state.notification_service = NotificationService(gateway)
+    app.state.soap_services = [soap]
+    app.state.notification_service = NotificationService(soap)
 
     install_error_handlers(app, basic_realm=settings.basic_auth_realm)
     app.add_middleware(

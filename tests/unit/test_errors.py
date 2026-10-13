@@ -6,26 +6,28 @@ from fastapi.testclient import TestClient
 
 from sap_gateway import errors
 from sap_gateway.errors import install_error_handlers
+from sap_gateway.soap import errors as soap_errors
 
 CASES = [
     (errors.AuthenticationRequiredError(), 401, "authentication_required"),
     (errors.AuthenticationFailedError(), 401, "authentication_failed"),
     (errors.AuthorizationError(), 403, "forbidden"),
     (errors.NotFoundError(), 404, "not_found"),
-    (errors.ConflictError(), 409, "conflict"),
+    (errors.NotFoundError(), 404, "not_found"),
     (errors.BusinessRuleError(), 422, "business_rule_violation"),
-    (errors.SoapWsdlUnavailableError(), 503, "soap_contract_unavailable"),
-    (errors.SoapConnectionError(request_sent=False), 502, "soap_connection_error"),
-    (errors.SoapTimeoutError(request_sent=True), 504, "soap_timeout"),
-    (errors.SoapTransportError(upstream_status=503), 502, "soap_transport_error"),
+    (soap_errors.SoapUnavailableError(), 503, "soap_contract_unavailable"),
+    (soap_errors.SoapConnectionError(request_sent=False), 502, "soap_connection_error"),
+    (soap_errors.SoapTimeoutError(request_sent=True), 504, "soap_timeout"),
+    (soap_errors.SoapHttpError(upstream_status=503), 502, "soap_transport_error"),
     (
-        errors.SoapFaultError(fault_code="soap:Server", fault_message="internal secret detail"),
+        soap_errors.SoapFaultError(
+            fault_code="soap:Server", fault_message="internal secret detail"
+        ),
         502,
         "soap_fault",
     ),
-    (errors.SoapMalformedResponseError(), 502, "soap_malformed_response"),
-    (errors.ContractMappingError(), 502, "contract_mismatch"),
-    (errors.SoapSerializationError(), 500, "soap_serialization_error"),
+    (soap_errors.SoapResponseError(), 502, "soap_response_error"),
+    (soap_errors.SoapRequestError(), 500, "soap_request_error"),
 ]
 
 
@@ -57,7 +59,7 @@ def test_401_responses_carry_www_authenticate():
 
 def test_soap_fault_content_is_never_exposed():
     response = make_client(
-        errors.SoapFaultError(fault_code="soap:Server", fault_message="internal secret detail")
+        soap_errors.SoapFaultError(fault_code="soap:Server", fault_message="internal secret detail")
     ).get("/boom")
     assert "internal secret detail" not in response.text
     assert "soap:Server" not in response.text

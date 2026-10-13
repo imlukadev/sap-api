@@ -3,14 +3,13 @@ import random
 import pytest
 
 from sap_gateway.config import RetrySettings
-from sap_gateway.errors import (
-    AuthenticationFailedError,
-    ContractMappingError,
+from sap_gateway.errors import AuthenticationFailedError
+from sap_gateway.soap.errors import (
     SoapConnectionError,
     SoapFaultError,
-    SoapMalformedResponseError,
+    SoapHttpError,
+    SoapResponseError,
     SoapTimeoutError,
-    SoapTransportError,
 )
 from sap_gateway.soap.retry import backoff_delay, is_retryable
 
@@ -26,14 +25,13 @@ from sap_gateway.soap.retry import backoff_delay, is_retryable
         (SoapTimeoutError(request_sent=False), False, True),
         (SoapTimeoutError(request_sent=True), True, True),
         (SoapTimeoutError(request_sent=True), False, False),
-        (SoapTransportError(upstream_status=503), True, True),
-        (SoapTransportError(upstream_status=503), False, False),
-        (SoapTransportError(upstream_status=500), True, False),
-        (SoapTransportError(upstream_status=404), True, False),
+        (SoapHttpError(upstream_status=503), True, True),
+        (SoapHttpError(upstream_status=503), False, False),
+        (SoapHttpError(upstream_status=500), True, False),
+        (SoapHttpError(upstream_status=404), True, False),
         (SoapFaultError(fault_code="x", fault_message="y"), True, False),
         (AuthenticationFailedError(), True, False),
-        (SoapMalformedResponseError(), True, False),
-        (ContractMappingError(), True, False),
+        (SoapResponseError(), True, False),
     ],
 )
 def test_retry_matrix(error, idempotent, expected):

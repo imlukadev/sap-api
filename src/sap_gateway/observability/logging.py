@@ -19,7 +19,7 @@ from typing import IO
 
 from opentelemetry import trace
 
-from sap_gateway.context import current_request, current_soap
+from sap_gateway.context import current_request
 from sap_gateway.observability.sanitize import (
     MAX_STACKTRACE_LENGTH,
     is_sensitive_key,
@@ -46,7 +46,7 @@ NOISY_LOGGERS = {
 
 
 class ContextFilter(logging.Filter):
-    """Adiciona, de forma automática, usuário, rota e operação SOAP ao registro."""
+    """Adiciona, de forma automática, usuário, rota e método ao registro."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         request = current_request()
@@ -57,10 +57,6 @@ class ContextFilter(logging.Filter):
                 record.__dict__.setdefault("http.route", request.route)
             if request.method:
                 record.__dict__.setdefault("http.request.method", request.method)
-        soap = current_soap()
-        if soap is not None:
-            record.__dict__.setdefault("soap.service", soap.service)
-            record.__dict__.setdefault("soap.operation", soap.operation)
         return True
 
 

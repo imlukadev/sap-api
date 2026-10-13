@@ -717,7 +717,7 @@
     {
       "type": "piechart",
       "title": "Erros por categoria",
-      "description": "soap_fault, timeout, connection, http_status, malformed_response, contract_mismatch, authentication, ...",
+      "description": "soap_fault, timeout, connection, http_status, invalid_response, authentication, ...",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROM}"

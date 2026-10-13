@@ -9,14 +9,16 @@ NS = {"n": m.NS, "xsi": m.XSI}
 BASE = "/api/v1/notifications"
 
 
-def test_read_preserves_absent_null_and_empty(client, basic_auth):
+def test_read_turns_empty_and_nil_elements_into_empty_string_and_null(client, basic_auth):
     response = client.get(f"{BASE}/{m.ID_SAMPLE_TRISTATE}", auth=basic_auth("alice"))
     assert response.status_code == 200
     body = response.json()
     assert body["description"] == ""
     assert body["reported_by"] is None and body["planned_cost"] is None
-    assert "functional_location" not in body and "priority" not in body
-    assert body["items"] == [{"item_number": 1, "description": "", "damage_code": None}]
+    assert body["functional_location"] is None and body["priority"] is None
+    assert body["items"] == [
+        {"item_number": 1, "description": None, "damage_code": None, "quantity": None}
+    ]
     assert body["long_text"] == [] and body["attributes"] == []
 
 
@@ -56,11 +58,11 @@ def test_create_sends_expected_soap_and_returns_location(client, mock_sap, basic
     root = etree.fromstring(sent.body).find(".//n:NotificationCreateRequest", NS)
     header = root.find("n:Header", NS)
     assert header.findtext("n:NotificationType", namespaces=NS) == "M1"
-    assert header.find("n:ReportedBy", NS).get(f"{{{m.XSI}}}nil") == "true"
+    assert header.find("n:ReportedBy", NS) is None, "None é omitido, não enviado como xsi:nil"
     assert header.find("n:FunctionalLocation", NS).text in (None, "")
     assert header.find("n:Priority", NS) is None
     item = root.find("n:Items/n:Item", NS)
-    assert item.find("n:DamageCode", NS).get(f"{{{m.XSI}}}nil") == "true"
+    assert item.find("n:DamageCode", NS) is None
     assert item.findtext("n:Quantity", namespaces=NS) == "1.5"
 
     fetched = client.get(
@@ -69,7 +71,7 @@ def test_create_sends_expected_soap_and_returns_location(client, mock_sap, basic
     assert fetched.status_code == 200 and fetched.json()["description"] == "Nova nota"
 
 
-def test_search_filters_and_collection_semantics(client, mock_sap, basic_auth):
+def test_search_filters_and_empty_collections(client, mock_sap, basic_auth):
     auth = basic_auth("alice")
     result = client.get(BASE, params={"status": "in_process", "plant": "1000"}, auth=auth).json()
     assert [n["notification_id"] for n in result["notifications"]] == [m.ID_SAMPLE_FULL]
@@ -99,9 +101,9 @@ def test_search_filters_and_collection_semantics(client, mock_sap, basic_auth):
         (m.ID_NOT_AUTHORIZED, 403, "forbidden"),
         (m.ID_HTTP_500, 502, "soap_transport_error"),
         (m.ID_HTTP_503, 502, "soap_transport_error"),
-        (m.ID_MALFORMED_XML, 502, "soap_malformed_response"),
-        (m.ID_WRONG_ELEMENT, 502, "soap_malformed_response"),
-        (m.ID_BAD_ENUM, 502, "contract_mismatch"),
+        (m.ID_MALFORMED_XML, 502, "soap_response_error"),
+        (m.ID_WRONG_ELEMENT, 502, "soap_response_error"),
+        (m.ID_BAD_ENUM, 502, "soap_response_error"),
     ],
 )
 def test_upstream_failures_become_consistent_http_errors(

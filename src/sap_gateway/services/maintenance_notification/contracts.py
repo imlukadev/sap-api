@@ -1,189 +1,113 @@
-"""Contrato SOAP do serviço ``MaintenanceNotification`` (espelha ``maintenance_notification.xsd``).
+"""Modelos SAP do serviço ``MaintenanceNotification`` (espelham ``maintenance_notification.xsd``).
 
-Nomes Python em snake_case; aliases (gerados em PascalCase pela base ``SoapModel``) correspondem
-aos elementos do XSD. Campos ``X | None = None`` são elementos ``minOccurs=0``/``nillable``;
-a presença no XML é controlada por ``model_fields_set``.
+Snake_case no Python, PascalCase no XML (alias automático). Códigos SAP ficam como ``str``;
+a tradução para os enums públicos está em ``service.py``. Atenção: se o wrapper da resposta tem
+um único filho, o Zeep devolve o próprio filho — por isso ``read`` valida ``NotificationData``.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import StrEnum
 
-from pydantic import Field
-
-from sap_gateway.soap.contracts import SoapModel, SoapOperation, SoapServiceSpec
+from sap_gateway.soap.models import SapModel, SapStr
 
 NAMESPACE = "urn:example:sap:pm:notification:v1"
-
-SERVICE = SoapServiceSpec(
-    key="maintenance_notification",
-    namespace=NAMESPACE,
-    binding="MaintenanceNotificationBinding",
-    default_wsdl="maintenance_notification.wsdl",
-)
-
-NOTIFICATION_ID_PATTERN = r"^[0-9]{12}$"
+BINDING = f"{{{NAMESPACE}}}MaintenanceNotificationBinding"
+SERVICE_KEY = "maintenance_notification"
 
 
-class NotificationTypeCode(StrEnum):
-    M1 = "M1"
-    M2 = "M2"
-    M3 = "M3"
-
-
-class PriorityCode(StrEnum):
-    P1 = "1"
-    P2 = "2"
-    P3 = "3"
-    P4 = "4"
-
-
-class StatusCode(StrEnum):
-    OSNO = "OSNO"
-    NOPR = "NOPR"
-    NOCO = "NOCO"
-
-
-class MessageSeverity(StrEnum):
-    S = "S"
-    I = "I"  # noqa: E741 - código de domínio do XSD
-    W = "W"
-    E = "E"
-
-
-class NotificationHeader(SoapModel):
-    notification_type: NotificationTypeCode
-    description: str = Field(max_length=40)
-    priority: PriorityCode | None = None
-    plant: str = Field(min_length=4, max_length=4)
+class Header(SapModel):
+    notification_type: str
+    description: SapStr
+    plant: str
+    priority: str | None = None
     functional_location: str | None = None
     reported_by: str | None = None
     required_start: date | None = None
     planned_cost: Decimal | None = None
 
 
-class NotificationItem(SoapModel):
+class Item(SapModel):
     item_number: int
     description: str | None = None
     damage_code: str | None = None
     quantity: Decimal | None = None
 
 
-class NotificationItemList(SoapModel):
-    item: list[NotificationItem] = Field(default_factory=list)
+class ItemList(SapModel):
+    item: list[Item] = []
 
 
-class LongText(SoapModel):
-    text_line: list[str] = Field(default_factory=list)
+class LongText(SapModel):
+    text_line: list[str] = []
 
 
-class Attribute(SoapModel):
+class Attribute(SapModel):
     name: str
-    value: str | None
+    value: str | None = None
 
 
-class AttributeList(SoapModel):
-    attribute: list[Attribute] = Field(default_factory=list)
+class AttributeList(SapModel):
+    attribute: list[Attribute] = []
 
 
-class NotificationData(SoapModel):
-    notification_id: str = Field(pattern=NOTIFICATION_ID_PATTERN)
-    header: NotificationHeader
-    status: StatusCode
+class NotificationData(SapModel):
+    notification_id: str
+    header: Header
+    status: str
     created_on: date
     created_at: datetime
-    items: NotificationItemList | None = None
+    items: ItemList | None = None
     long_text: LongText | None = None
     attributes: AttributeList | None = None
 
 
-class NotificationSummary(SoapModel):
-    notification_id: str = Field(pattern=NOTIFICATION_ID_PATTERN)
-    description: str
-    status: StatusCode
-    priority: PriorityCode | None = None
+class Summary(SapModel):
+    notification_id: str
+    description: SapStr
+    status: str
     created_on: date
+    priority: str | None = None
 
 
-class Message(SoapModel):
-    severity: MessageSeverity
-    text: str
+class SummaryList(SapModel):
+    notification: list[Summary] = []
 
 
-class MessageList(SoapModel):
-    message: list[Message] = Field(default_factory=list)
-
-
-class NotificationSummaryList(SoapModel):
-    notification: list[NotificationSummary] = Field(default_factory=list)
-
-
-class NotificationReadRequest(SoapModel):
-    notification_id: str = Field(pattern=NOTIFICATION_ID_PATTERN)
-
-
-class NotificationReadResponse(SoapModel):
-    notification: NotificationData
-
-
-class NotificationCreateRequest(SoapModel):
-    header: NotificationHeader
-    items: NotificationItemList | None = None
-    long_text: LongText | None = None
-    attributes: AttributeList | None = None
-
-
-class NotificationCreateResponse(SoapModel):
-    notification_id: str = Field(pattern=NOTIFICATION_ID_PATTERN)
-    messages: MessageList | None = None
-
-
-class NotificationSearchRequest(SoapModel):
-    plant: str | None = None
-    status: StatusCode | None = None
-    created_from: date | None = None
-    created_to: date | None = None
-    max_results: int | None = None
-
-
-class NotificationSearchResponse(SoapModel):
-    notifications: NotificationSummaryList | None = None
+class SearchResponse(SapModel):
+    notifications: SummaryList | None = None
     truncated: bool
 
 
-class NotificationFault(SoapModel):
-    code: str
-    message: str
+class Message(SapModel):
+    severity: str
+    text: str
 
 
-NOTIFICATION_READ = SoapOperation(
-    service=SERVICE,
-    name="NotificationRead",
-    request_model=NotificationReadRequest,
-    response_model=NotificationReadResponse,
-    idempotent=True,
-    fault_model=NotificationFault,
-    fault_element="NotificationFault",
-)
+class MessageList(SapModel):
+    message: list[Message] = []
 
-NOTIFICATION_SEARCH = SoapOperation(
-    service=SERVICE,
-    name="NotificationSearch",
-    request_model=NotificationSearchRequest,
-    response_model=NotificationSearchResponse,
-    idempotent=True,
-    fault_model=NotificationFault,
-    fault_element="NotificationFault",
-)
 
-NOTIFICATION_CREATE = SoapOperation(
-    service=SERVICE,
-    name="NotificationCreate",
-    request_model=NotificationCreateRequest,
-    response_model=NotificationCreateResponse,
-    idempotent=False,
-    fault_model=NotificationFault,
-    fault_element="NotificationFault",
-)
+class CreateResponse(SapModel):
+    notification_id: str
+    messages: MessageList | None = None
+
+
+class ReadRequest(SapModel):
+    notification_id: str
+
+
+class SearchRequest(SapModel):
+    max_results: int
+    plant: str | None = None
+    status: str | None = None
+    created_from: date | None = None
+    created_to: date | None = None
+
+
+class CreateRequest(SapModel):
+    header: Header
+    items: ItemList | None = None
+    long_text: LongText | None = None
+    attributes: AttributeList | None = None

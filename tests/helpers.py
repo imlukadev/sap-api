@@ -11,9 +11,10 @@ from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from sap_gateway.config import Settings, SoapServiceSettings, TelemetrySettings
+from sap_gateway.config import PACKAGED_WSDL, Settings, SoapServiceSettings, TelemetrySettings
 from sap_gateway.observability.telemetry import Telemetry
-from sap_gateway.soap.gateway import SoapGateway
+from sap_gateway.services.maintenance_notification import contracts as notification_contracts
+from sap_gateway.soap.service import SoapService
 
 SERVICE_KEY = "maintenance_notification"
 
@@ -76,15 +77,19 @@ def build_collected(settings: Settings) -> Collected:
     return Collected(telemetry, spans, metrics, logs, stream)
 
 
-def build_gateway(
+def build_soap(
     settings: Settings, collected: Collected, *, sleeps: list[float] | None = None
-) -> SoapGateway:
+) -> SoapService:
     recorder = sleeps if sleeps is not None else []
-    return SoapGateway(
-        settings,
-        collected.telemetry,
+    return SoapService(
+        notification_contracts.SERVICE_KEY,
+        notification_contracts.BINDING,
+        settings.soap_service(notification_contracts.SERVICE_KEY),
+        default_wsdl=PACKAGED_WSDL / "maintenance_notification.wsdl",
+        telemetry=collected.telemetry,
+        require_https=settings.environment not in {"local", "test"},
         sleep=recorder.append,
-        rng=_ConstantRandom(),
+        rng=_ConstantRandom(),  # type: ignore[arg-type]
     )
 
 
@@ -93,3 +98,15 @@ class _ConstantRandom:
 
     def uniform(self, low: float, high: float) -> float:
         return high
+
+
+def build_soap_for(settings: Settings, telemetry: Telemetry) -> SoapService:
+    """SoapService de produção ligado a um Telemetry já existente (testes OTLP/e2e)."""
+    return SoapService(
+        notification_contracts.SERVICE_KEY,
+        notification_contracts.BINDING,
+        settings.soap_service(notification_contracts.SERVICE_KEY),
+        default_wsdl=PACKAGED_WSDL / "maintenance_notification.wsdl",
+        telemetry=telemetry,
+        require_https=settings.environment not in {"local", "test"},
+    )

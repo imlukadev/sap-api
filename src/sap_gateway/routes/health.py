@@ -37,5 +37,5 @@ def ready(request: Request, response: Response) -> ReadyStatus:
     is_ready = state.telemetry.is_ready
     if not is_ready:
         response.status_code = 503
-    loaded = {key: state.gateway.wsdl_store.is_loaded(key) for key in state.service_keys}
+    loaded = {soap.name: soap.contract_loaded for soap in state.soap_services}
     return ReadyStatus(status="ready" if is_ready else "unavailable", contracts_loaded=loaded)

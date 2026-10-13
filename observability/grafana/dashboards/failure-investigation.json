@@ -193,7 +193,7 @@
       "title": "Fluxo de investigação",
       "options": {
         "mode": "markdown",
-        "content": "1. **Quando** — veja os picos de falhas abaixo e ajuste o período.  \n2. **Quem/onde** — filtre por usuário, rota, operação SOAP ou tipo de erro (regex).  \n3. **Por quê** — na lista de logs, abra o campo **TraceID → Abrir trace**; no trace, o botão *Logs* mostra os logs do mesmo `trace_id`.  \nTipos de erro: `soap_fault`, `timeout`, `connection`, `http_status`, `malformed_response`, `contract_mismatch`, `authentication`, `authorization`, `wsdl_unavailable`, `not_found`, ..."
+        "content": "1. **Quando** — veja os picos de falhas abaixo e ajuste o período.  \n2. **Quem/onde** — filtre por usuário, rota, operação SOAP ou tipo de erro (regex).  \n3. **Por quê** — na lista de logs, abra o campo **TraceID → Abrir trace**; no trace, o botão *Logs* mostra os logs do mesmo `trace_id`.  \nTipos de erro: `soap_fault`, `timeout`, `connection`, `http_status`, `invalid_response`, `authentication`, `authorization`, `wsdl_unavailable`, `not_found`, ..."
       },
       "id": 1,
       "gridPos": {

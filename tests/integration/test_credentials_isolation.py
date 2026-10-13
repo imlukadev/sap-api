@@ -8,7 +8,7 @@ import pytest
 
 from helpers import USERS
 from sap_gateway.devtools import mock_sap as m
-from sap_gateway.soap import gateway as gateway_module
+from sap_gateway.soap import service as service_module
 
 BASE = "/api/v1/notifications"
 
@@ -48,7 +48,7 @@ def test_no_session_state_is_carried_between_requests(client, mock_sap, basic_au
 
 def test_every_attempt_uses_a_fresh_closed_session(client, mock_sap, basic_auth, monkeypatch):
     seen: list[tuple[object, str, list[bool]]] = []
-    original = gateway_module.build_request_session
+    original = service_module.build_session
 
     def spy(cfg, credentials):
         session = original(cfg, credentials)
@@ -60,16 +60,16 @@ def test_every_attempt_uses_a_fresh_closed_session(client, mock_sap, basic_auth,
             real_close()
 
         session.close = close  # type: ignore[method-assign]
-        seen.append((session, session.auth.username, closed))
+        seen.append((session, getattr(session.auth, "username", None), closed))
         return session
 
-    monkeypatch.setattr(gateway_module, "build_request_session", spy)
+    monkeypatch.setattr(service_module, "build_session", spy)
     client.get(f"{BASE}/{m.ID_SAMPLE_FULL}", auth=basic_auth("alice"))
     client.get(f"{BASE}/{m.ID_SAMPLE_FULL}", auth=basic_auth("bob"))
     client.get(f"{BASE}/{m.ID_HTTP_503}", auth=basic_auth("alice"))
-    assert len(seen) == 5
-    assert len({id(session) for session, _, _ in seen}) == 5  # referências mantidas: ids únicos
-    assert [u for _, u, _ in seen] == ["alice", "bob", "alice", "alice", "alice"]
+    assert len(seen) == 6  # 1 sessão descartável da carga do WSDL + 5 tentativas
+    assert len({id(session) for session, _, _ in seen}) == 6  # referências mantidas: ids únicos
+    assert [u for _, u, _ in seen] == [None, "alice", "bob", "alice", "alice", "alice"]
     assert all(closed[0] for _, _, closed in seen)
 
 
@@ -148,7 +148,7 @@ def test_request_context_does_not_leak_across_requests(bundle, mock_sap):
     asyncio.run(
         _run_concurrently(bundle.app, [(f"{BASE}/{m.ID_SAMPLE_FULL}", ("alice", USERS["alice"]))])
     )
-    assert context.current_request() is None and context.current_soap() is None
+    assert context.current_request() is None
 
 
 @pytest.mark.parametrize("user", ["alice", "bob"])

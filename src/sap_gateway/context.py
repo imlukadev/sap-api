@@ -26,22 +26,11 @@ class RequestContext:
         return getattr(route, "path", None)
 
 
-@dataclass(frozen=True, slots=True)
-class SoapContext:
-    service: str
-    operation: str
-
-
 _request_ctx: ContextVar[RequestContext | None] = ContextVar("request_ctx", default=None)
-_soap_ctx: ContextVar[SoapContext | None] = ContextVar("soap_ctx", default=None)
 
 
 def current_request() -> RequestContext | None:
     return _request_ctx.get()
-
-
-def current_soap() -> SoapContext | None:
-    return _soap_ctx.get()
 
 
 @contextmanager
@@ -51,15 +40,6 @@ def request_scope(ctx: RequestContext) -> Iterator[RequestContext]:
         yield ctx
     finally:
         _request_ctx.reset(token)
-
-
-@contextmanager
-def soap_scope(service: str, operation: str) -> Iterator[None]:
-    token = _soap_ctx.set(SoapContext(service, operation))
-    try:
-        yield
-    finally:
-        _soap_ctx.reset(token)
 
 
 def set_username(username: str) -> None:

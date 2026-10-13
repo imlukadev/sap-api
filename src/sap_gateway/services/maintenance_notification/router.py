@@ -39,7 +39,6 @@ ServiceDep = Annotated[NotificationService, Depends(get_notification_service)]
     operation_id="search_notifications",
     summary="Pesquisar notas de manutenção",
     response_model=schemas.NotificationSearchResult,
-    response_model_exclude_unset=True,
     responses={200: {"description": "Resultado (possivelmente vazio)."}, **_ERRORS},
 )
 def search_notifications(
@@ -56,7 +55,6 @@ def search_notifications(
     operation_id="get_notification",
     summary="Consultar uma nota de manutenção",
     response_model=schemas.NotificationOut,
-    response_model_exclude_unset=True,
     responses={404: {"model": ErrorResponse, "description": "Nota inexistente."}, **_ERRORS},
 )
 def get_notification(
@@ -64,8 +62,7 @@ def get_notification(
     credentials: CurrentCredentials,
     service: ServiceDep,
 ) -> schemas.NotificationOut:
-    """Executa ``NotificationRead``. Campos opcionais ausentes são omitidos; ``null`` indica
-    ``xsi:nil`` e ``""`` indica elemento vazio no SOAP."""
+    """Executa ``NotificationRead`` (idempotente: com retry)."""
     return service.get(notification_id, credentials)
 
 

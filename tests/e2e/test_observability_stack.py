@@ -24,13 +24,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from helpers import build_settings
+from helpers import build_settings, build_soap_for
 from sap_gateway.config import TelemetrySettings
 from sap_gateway.devtools import mock_sap as m
 from sap_gateway.devtools.mock_sap import MockSapServer
 from sap_gateway.main import create_app
 from sap_gateway.observability.telemetry import Telemetry
-from sap_gateway.soap.gateway import SoapGateway
 
 pytestmark = [
     pytest.mark.e2e,
@@ -83,7 +82,7 @@ def scenario():
     )
     settings = build_settings(sap.endpoint, environment="local", telemetry=telemetry_settings)
     telemetry = Telemetry(settings)
-    app = create_app(settings, telemetry=telemetry, gateway=SoapGateway(settings, telemetry))
+    app = create_app(settings, telemetry=telemetry, soap=build_soap_for(settings, telemetry))
     with TestClient(app) as client:
         ok = client.get(f"/api/v1/notifications/{m.ID_SAMPLE_FULL}", auth=(username, password))
         missing = client.get(f"/api/v1/notifications/{m.ID_NOT_FOUND}", auth=(username, password))

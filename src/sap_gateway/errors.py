@@ -96,105 +96,11 @@ class NotFoundError(AppError):
     error_type = "not_found"
 
 
-class ConflictError(AppError):
-    status_code = 409
-    code = "conflict"
-    public_message = "A operação conflita com o estado atual do recurso."
-    error_type = "conflict"
-
-
 class BusinessRuleError(AppError):
     status_code = 422
     code = "business_rule_violation"
     public_message = "A operação foi rejeitada por uma regra de negócio do sistema de destino."
     error_type = "business_rule"
-
-
-class SoapWsdlUnavailableError(AppError):
-    status_code = 503
-    code = "soap_contract_unavailable"
-    public_message = "O contrato (WSDL/XSD) do serviço de destino está indisponível."
-    error_type = "wsdl_unavailable"
-
-
-class SoapConnectionError(AppError):
-    status_code = 502
-    code = "soap_connection_error"
-    public_message = "Não foi possível conectar ao serviço de destino."
-    error_type = "connection"
-
-    def __init__(self, *, request_sent: bool, transient: bool = True) -> None:
-        super().__init__()
-        self.request_sent = request_sent
-        self.transient = transient
-
-
-class SoapTimeoutError(AppError):
-    status_code = 504
-    code = "soap_timeout"
-    public_message = "O serviço de destino não respondeu dentro do tempo limite."
-    error_type = "timeout"
-
-    def __init__(self, *, request_sent: bool) -> None:
-        super().__init__()
-        self.request_sent = request_sent
-
-
-class SoapTransportError(AppError):
-    status_code = 502
-    code = "soap_transport_error"
-    public_message = "O serviço de destino respondeu com erro HTTP."
-    error_type = "http_status"
-
-    def __init__(self, *, upstream_status: int) -> None:
-        super().__init__()
-        self.upstream_status = upstream_status
-
-
-class SoapFaultError(AppError):
-    """SOAP Fault. ``detail`` é o modelo de fault declarado no contrato da operação (se houver)."""
-
-    status_code = 502
-    code = "soap_fault"
-    public_message = "O serviço de destino retornou um erro (SOAP Fault)."
-    error_type = "soap_fault"
-
-    def __init__(
-        self,
-        *,
-        fault_code: str | None,
-        fault_message: str | None,
-        detail: BaseModel | None = None,
-    ) -> None:
-        super().__init__()
-        self.fault_code = fault_code
-        self.fault_message = fault_message
-        self.detail = detail
-
-
-class SoapMalformedResponseError(AppError):
-    status_code = 502
-    code = "soap_malformed_response"
-    public_message = "O serviço de destino retornou uma resposta inválida."
-    error_type = "malformed_response"
-
-
-class ContractMappingError(AppError):
-    """Dados que não respeitam o contrato (resposta SOAP fora do contrato)."""
-
-    status_code = 502
-    code = "contract_mismatch"
-    public_message = "A resposta do serviço de destino não respeita o contrato esperado."
-    error_type = "contract_mismatch"
-
-
-class SoapSerializationError(AppError):
-    """A requisição montada não pôde ser serializada conforme o XSD (defeito de mapeamento)."""
-
-    status_code = 500
-    code = "soap_serialization_error"
-    public_message = "Não foi possível montar a requisição para o serviço de destino."
-    error_type = "serialization"
 
 
 def _trace_id() -> str | None:

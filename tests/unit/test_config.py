@@ -33,7 +33,6 @@ def test_soap_services_from_nested_environment_variables(monkeypatch):
     assert cfg.read_timeout_seconds == 12.5
     assert cfg.retry.max_attempts == 4
     assert cfg.auth_mode is SoapAuthMode.WS_SECURITY_USERNAME_TOKEN
-    assert cfg.allowed_hosts == ("a.example", "b.example")
 
 
 def test_standard_otel_variables_are_honoured(monkeypatch):

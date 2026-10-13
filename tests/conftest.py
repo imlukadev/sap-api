@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from helpers import USERS, Collected, build_collected, build_gateway, build_settings
+from helpers import USERS, Collected, build_collected, build_settings, build_soap
 from sap_gateway.config import Settings
 from sap_gateway.devtools.mock_sap import MockSapServer
 from sap_gateway.main import create_app
@@ -58,8 +58,8 @@ def make_app(mock_sap: MockSapServer) -> Iterator[Callable[..., AppBundle]]:
         collected = build_collected(settings)
         created.append(collected)
         sleeps: list[float] = []
-        gateway = build_gateway(settings, collected, sleeps=sleeps)
-        app = create_app(settings, telemetry=collected.telemetry, gateway=gateway)
+        soap = build_soap(settings, collected, sleeps=sleeps)
+        app = create_app(settings, telemetry=collected.telemetry, soap=soap)
         return AppBundle(app, collected, sleeps)
 
     yield factory

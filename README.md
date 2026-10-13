@@ -2,8 +2,9 @@
 
 Camada intermediária (FastAPI) entre consumidores REST e serviços SOAP corporativos, em especial SAP.
 Recebe HTTP Basic, valida a entrada, executa a operação SOAP com **as credenciais do próprio usuário**
-e devolve uma resposta REST consistente — com observabilidade completa (OpenTelemetry → Grafana Alloy →
-Tempo / Loki / Prometheus → Grafana).
+e devolve uma resposta REST consistente. O coração é um encapsulador pequeno do Zeep, o `SoapService`
+(`src/sap_gateway/soap/`, ~450 linhas): `service.call("Operacao", credenciais, Modelo(...), response_model=Resp)`.
+Por cima dele: observabilidade completa (OpenTelemetry → Grafana Alloy → Tempo / Loki / Prometheus → Grafana).
 
 > **Sobre o contrato SOAP incluído.** Nenhum WSDL real foi fornecido, então o repositório traz um contrato
 > **representativo** (`MaintenanceNotification`, estilo SAP PM: ler / pesquisar / criar notas de manutenção)
@@ -17,11 +18,11 @@ Tempo / Loki / Prometheus → Grafana).
 1. [Arquitetura](#arquitetura)
 2. [Tecnologias e versões](#tecnologias-e-versões)
 3. [Pré-requisitos e instalação](#pré-requisitos-e-instalação)
-4. [Início rápido](#início-rápido)
+4. [Início rápido](#início-rápido) · [Usando o `SoapService`](#usando-o-soapservice)
 5. [Configuração (variáveis de ambiente)](#configuração-variáveis-de-ambiente)
 6. [Exemplos de requisições](#exemplos-de-requisições)
 7. [Autenticação e isolamento de credenciais](#autenticação-e-isolamento-de-credenciais)
-8. [Serviços SOAP: configuração, segurança de destino e cache de WSDL](#serviços-soap-configuração-segurança-de-destino-e-cache-de-wsdl)
+8. [Serviços SOAP: configuração, destino e cache de WSDL](#serviços-soap-configuração-destino-e-cache-de-wsdl)
 9. [Contratos e mapeamentos](#contratos-e-mapeamentos)
 10. [Adicionando um novo serviço SOAP](#adicionando-um-novo-serviço-soap)
 11. [Erros, timeouts e retries](#erros-timeouts-e-retries)
@@ -37,11 +38,10 @@ Tempo / Loki / Prometheus → Grafana).
 ## Arquitetura
 
 ```
-Consumidor ──HTTP Basic──► FastAPI ──► Serviço (orquestração) ──► SoapGateway ──► SAP (SOAP)
-                            │  rota        │  mapeadores            │  Zeep + requests
-                            │  schemas     │  REST ⇄ contrato SOAP  │  sessão/cliente POR TENTATIVA
-                            ▼  (Pydantic)  ▼  (Pydantic)            ▼
-                     erros tipados → resposta JSON estruturada   WSDL parseado 1x (somente leitura)
+Consumidor ──HTTP Basic──► FastAPI ──► service.py ──► SoapService ──► SAP (SOAP)
+                            rota/schemas    REST ⇄ modelo SAP   Zeep + requests
+                            (Pydantic)      (Pydantic)          sessão/cliente POR TENTATIVA
+                     erros tipados → JSON padronizado           WSDL parseado 1x (somente leitura)
 
 Telemetria:  API ──OTLP gRPC (4317)──► Grafana Alloy ──┬─ traces ─► Tempo
                                                       ├─ logs   ─► Loki        (OTLP nativo)
@@ -50,43 +50,85 @@ Telemetria:  API ──OTLP gRPC (4317)──► Grafana Alloy ──┬─ trac
 ```
 
 Fluxo de uma requisição: middleware (contexto + log de acesso) → dependência de autenticação (extrai Basic) →
-validação Pydantic → serviço → mapeador REST→SOAP → `SoapGateway.call` (span `SOAP serviço/operação`, retries,
-métricas) → Zeep → SAP → resposta lida pelo Zeep, convertida *preservando ausente/nil/vazio* → contrato SOAP
-(Pydantic) → mapeador SOAP→REST → resposta. Qualquer falha vira um `AppError` tipado e depois JSON padronizado.
+validação Pydantic → serviço (`service.py`: converte REST → modelo SAP, chama o `SoapService`, converte a resposta) →
+`SoapService.call` (span, retries, métricas, um log) → Zeep → SAP. Qualquer falha vira um `AppError` tipado e depois
+JSON padronizado.
 
 ```
 src/sap_gateway/
 ├── main.py                 fábrica `create_app()` e entrypoint `sap-gateway`
 ├── config.py               Pydantic Settings (APP_*, OTEL_*) — nenhum segredo com valor padrão
 ├── auth.py                 Basic Auth no limite da API; `BasicCredentials` imutável (senha fora de repr)
-├── context.py              contextvars de diagnóstico (usuário, rota, operação) — NUNCA senha
-├── errors.py               hierarquia `AppError` + handlers → JSON `{"error": {...}}`
+├── context.py              contextvars de diagnóstico (usuário, rota, método) — NUNCA senha
+├── errors.py               `AppError` + handlers → JSON `{"error": {...}}`
 ├── routes/health.py        /health/live e /health/ready
-├── soap/                   infraestrutura reutilizável (independe do serviço)
-│   ├── contracts.py        `SoapModel` (Pydantic ↔ Zeep), `SoapServiceSpec`, `SoapOperation`
-│   ├── gateway.py          `SoapGateway.call(...)`: sessão por tentativa, retry, tradução de erros, spans/métricas
-│   ├── wsdl.py             `WsdlStore`: carga única e cache do WSDL/XSD (sem credenciais de usuário)
-│   ├── transport.py        `LoadTransport` (anti-SSRF) e `RequestTransport` (por tentativa)
-│   ├── plain.py            Zeep → estrutura simples preservando ausente × nil × vazio
-│   └── retry.py            política de retry (idempotência) e backoff com jitter
-├── services/maintenance_notification/   um serviço publicado
-│   ├── contracts.py        modelos SOAP + operações (nomes XML, idempotência, fault)
+├── soap/                   o encapsulador do Zeep (independe do serviço)
+│   ├── service.py          `SoapService`: WSDL 1x, sessão/cliente POR TENTATIVA, retry, tradução de erros
+│   ├── models.py           `SapModel` (snake_case ⇄ PascalCase) e `SapStr`
+│   ├── transport.py        `build_session` e `RequestTransport` (timeouts, sem redirect)
+│   ├── errors.py           7 erros SOAP pequenos
+│   └── retry.py            quando repetir (idempotência) e backoff com jitter
+├── services/maintenance_notification/   um serviço de exemplo
+│   ├── contracts.py        modelos SAP (requisição/resposta)
 │   ├── schemas.py          modelos REST públicos
-│   ├── mappers.py          mapeamentos explícitos REST ⇄ SOAP
-│   ├── service.py          orquestração + tradução de faults de domínio
-│   └── router.py           rotas FastAPI (contrato, docs, códigos HTTP)
-├── observability/
-│   ├── telemetry.py        inicialização única: providers, exporters OTLP, instrumentações, shutdown
-│   ├── logging.py          JSON no stdout, filtros de contexto/sanitização, handler OTLP
-│   ├── sanitize.py         redação de segredos
-│   ├── metrics.py          instrumentos `soap.client.*` e `app.health.status`
-│   └── middleware.py       contexto da requisição + log de acesso
+│   ├── service.py          orquestração + mapeamento + tradução de faults de domínio
+│   └── router.py           rotas FastAPI
+├── observability/          telemetry.py, logging.py, sanitize.py, metrics.py, middleware.py
 ├── devtools/mock_sap.py    SAP simulado (dev/testes) — NÃO é código de produção
 └── wsdl/                   WSDL/XSD de exemplo
 observability/              Alloy, Tempo, Loki, Prometheus, Grafana (datasources + 4 dashboards)
 compose.yaml  Dockerfile    ambiente local e imagem
 tests/                      unit/ integration/ e2e/ (+ receptores OTLP de teste)
 ```
+
+## Usando o `SoapService`
+
+```python
+from sap_gateway.config import SoapServiceSettings
+from sap_gateway.soap.models import SapModel, SapStr
+from sap_gateway.soap.service import SoapService
+
+catalog_ws = SoapService(  # 1x por serviço (módulo/app)
+    "catalog",
+    "{urn:sap:catalog}Binding",
+    SoapServiceSettings(
+        wsdl="https://.../ecc_catalog?sap-client=100", endpoint_url="https://.../ecc_catalog"
+    ),
+    # retry, timeouts, TLS, auth_mode etc. também ficam em SoapServiceSettings
+)
+
+
+class Selection(SapModel):  # snake_case aqui, PascalCase no XML (alias automático)
+    id: str = Field(alias="ID")  # siglas: alias explícito (to_pascal("id") = "Id")
+    language_code: str
+
+
+class Category(SapModel):
+    category_id: str
+    category_name: SapStr  # SAP manda <X/> → Zeep entrega None → vira ""
+
+
+class CatalogResponse(SapModel):
+    category: list[Category] = []
+
+
+resp = catalog_ws.call(
+    "QualityIssue..._In",
+    credentials,  # credenciais DO USUÁRIO, por chamada
+    QualityIssueCategorySelection=Selection(
+        id="X", language_code="P"
+    ),  # **kwargs: nomes XML da operação
+    response_model=CatalogResponse,  # sem response_model devolve o objeto do Zeep
+    idempotent=True,  # consulta: pode repetir após timeout de leitura / 5xx
+)
+catalog_ws.xml_request(
+    "QualityIssue..._In", QualityIssueCategorySelection=Selection(...)
+)  # debug do XML
+```
+
+Pontos de atenção do Zeep que o `SoapService` herda: `<X/>` e elemento ausente chegam como `None`; se o wrapper da
+resposta tem **um único filho**, o Zeep devolve o próprio filho (ajuste o `response_model` ao que o Zeep devolve —
+use `response_model=None` e inspecione). `strict=False` por padrão (SAP costuma fugir do XSD).
 
 ## Tecnologias e versões
 
@@ -190,13 +232,13 @@ Authorization: Basic <base64 usuario:senha>
   "status": "outstanding",
   "created_on": "2026-03-01",
   "created_at": "2026-03-01T10:20:30Z",
-  "items": [{ "item_number": 1, "description": "", "damage_code": null }],
+  "items": [{ "item_number": 1, "description": null, "damage_code": null, "quantity": null }],
   "long_text": [],
   "attributes": []
 }
 ```
-Aqui `description: ""` = elemento XML **vazio**; `reported_by: null` = `xsi:nil="true"`; `functional_location`
-**omitido** = elemento **ausente** (ver [Contratos e mapeamentos](#contratos-e-mapeamentos)).
+Elemento vazio, `xsi:nil` e elemento ausente chegam do Zeep como `None`: strings obrigatórias viram `""` e as
+opcionais, `null` (ver [Contratos e mapeamentos](#contratos-e-mapeamentos)).
 
 ```http
 POST /api/v1/notifications        → 201, Location: /api/v1/notifications/000000001000
@@ -238,8 +280,8 @@ cabeçalho ausente/malformado, vazio, com caracteres de controle ou acima de 128
 2. A cada **tentativa** de chamada criamos `requests.Session` → `RequestTransport` → `zeep.Client` (+ `wsse`) novos;
    a sessão é fechada em `finally`. Cookies do SAP (`SAP_SESSIONID`, `MYSAPSSO2`…) morrem com a sessão. Sem
    `netrc`/proxy herdados do ambiente (`trust_env=False`), sem redirects (nunca reenvia credenciais a outro host).
-3. O único objeto compartilhado é o `Document` WSDL parseado, somente-leitura e **sem credenciais de usuário**.
-4. `contextvars` guarda só diagnóstico (usuário, método, rota, serviço/operação SOAP).
+3. O único objeto compartilhado é o `Document` WSDL parseado, somente-leitura e sem credenciais retidas.
+4. `contextvars` guarda só diagnóstico (usuário, método, rota).
 5. Senhas, `Authorization`, cookies e tokens são redigidos em logs, traces e mensagens de erro; o log de acesso não lê
    cabeçalhos; `zeep.transports` (que loga envelopes em DEBUG, inclusive WS-Security) é fixado em WARNING e o
    transporte próprio não loga corpos.
@@ -250,58 +292,41 @@ não afeta outra; 120 requisições concorrentes mistas; sessões distintas e fe
 logs, spans nem métricas. Foram feitas *mutações deliberadas* (sessão compartilhada, log da senha, retry indevido)
 confirmando que esses testes falham.
 
-## Serviços SOAP: configuração, segurança de destino e cache de WSDL
+## Serviços SOAP: configuração, destino e cache de WSDL
 
-* **Destinos vêm só da configuração.** Nenhum endpoint recebe nome de serviço/operação/URL do consumidor; não existe
-  rota “executa qualquer operação”. Cada operação publicada é uma rota explícita, documentada e tipada.
-* **Anti-SSRF na carga de WSDL/XSD.** `LoadTransport` só lê (a) arquivos dentro do diretório do WSDL configurado e
-  (b) hosts do WSDL + `ALLOWED_HOSTS`; esquemas `ftp:`, `file:///etc/...`, `../` e IPs de metadata são recusados.
-  Chamadas de negócio só podem ser feitas ao endereço resolvido da configuração (`RequestTransport` recusa qualquer
-  outro). O `soap:address` do WSDL é tratado como configuração confiável; `ENDPOINT_URL` o sobrescreve.
-* **Estratégia de cache.** O WSDL é parseado **uma vez** (lazy, com lock; falhas não são cacheadas, então a API se
-  recupera quando o WSDL volta) e compartilhado como objeto somente-leitura. Prefira WSDL local (sem rede nem
-  credencial). Se for por URL, usa-se uma credencial *técnica* separada, aplicada por carga em sessão descartável.
+* **Destinos vêm só da configuração/código.** Nenhum endpoint recebe nome de serviço/operação/URL do consumidor; não
+  existe rota “executa qualquer operação”. Cada operação publicada é uma rota explícita e tipada.
+* **Cache do WSDL.** Parseado **uma vez** (lazy, com lock; falhas não são cacheadas, então a API se recupera quando o
+  WSDL volta) e compartilhado como objeto somente-leitura. WSDL por URL costuma exigir login: usa-se
+  `WSDL_USERNAME/PASSWORD` (técnica) se configurados, senão a credencial do **primeiro chamador**, numa sessão
+  descartada logo após a carga (nada é retido). Prefira WSDL local.
+* **HTTPS.** Fora de `local`/`test`, endpoint que não seja `https://` é recusado (503) antes de enviar credenciais.
 * **XML endurecido.** Zeep por padrão não proíbe DTD/entidades; fixamos `forbid_dtd`, `forbid_entities` e
-  `forbid_external` (nas chamadas), `strict=True` e `xml_huge_tree=False`.
-* **Zeep está bem isolado da camada REST:** schemas públicos não importam Zeep.
+  `forbid_external` (nas chamadas), `xml_huge_tree=False`.
+* Como os destinos são definidos por quem configura a API (não pelo consumidor), não há restrição de hosts para
+  `xsd:import` nem de diretório para o WSDL local.
 
 ## Contratos e mapeamentos
 
-* Cada operação tem **modelos Pydantic explícitos** (`contracts.py`) com nome XML via alias (`alias_generator=to_pascal`
-  + `populate_by_name`), `extra="forbid"` (campo desconhecido falha, não é descartado), imutáveis, enums de domínio,
-  decimais/datas/`datetime` tipados, wrappers de coleção (`Items/Item`) e `idempotent` declarado.
-* **Ausente × `null` × vazio** (não são equivalentes):
-
-  | Conceito | XML | SOAP (modelo) | REST (JSON) |
-  |---|---|---|---|
-  | ausente | elemento omitido | campo não definido | chave omitida |
-  | nulo | `xsi:nil="true"` | campo `None` definido | `null` |
-  | vazio | `<X/>` | `""` | `""` |
-
-  Na ida usamos `model_fields_set` (+ `zeep.xsd.Nil`); na volta, `soap/plain.py` percorre em paralelo o objeto Zeep e o XML
-  da resposta (o Zeep colapsa os três casos em `None`; ele ainda “desembrulha” respostas de filho único — por isso
-  fazemos o parse com `client.get_element(...).parse` e não dependemos do retorno do serviço). Coleções são sempre
-  arrays no REST (zero itens = ausente ou vazio). Elemento vazio de tipo não-string (`<Qty/>`) **falha explicitamente**.
-* **Mapeadores explícitos** (`mappers.py`): tabelas de códigos bidirecionais com teste de exaustividade (`M1`↔
-  `maintenance_request`, …), achatamento do cabeçalho, listas aninhadas; código desconhecido → `contract_mismatch` (502).
-* **Limites atuais**: `to_plain` cobre elementos (não atributos XML, `xsd:any`/`anyType`, que falham explicitamente).
+* Cada operação usa **modelos Pydantic** (`SapModel`): nome Python em snake_case, nome XML por alias (`to_pascal`
+  automático; siglas com `Field(alias="ID")`). Na ida: `model.to_soap()` (aliases, enums como valor, campos `None`
+  omitidos). Na volta: `serialize_object` do Zeep → `response_model.model_validate(...)`; campos extras do SAP são
+  ignorados e valores fora do modelo viram `soap_response_error` (com os campos, nunca os valores).
+* **Ausente × `nil` × vazio não são distinguidos**: o Zeep já os entrega como `None`; `SapStr` converte `None` em `""`
+  para strings que o SAP pode deixar vazias. (A primeira versão preservava a distinção; foi removida por custo × benefício.)
+* A API pública usa **schemas REST próprios** (`schemas.py`: enums legíveis, sem códigos SAP); a tradução é código
+  direto em `service.py`, com tabelas de códigos. Código desconhecido → `soap_response_error` (nunca `KeyError`).
 
 ## Adicionando um novo serviço SOAP
 
-1. **Contrato**: coloque o WSDL/XSD em `src/sap_gateway/wsdl/` (ou aponte `…__WSDL`).
-2. **Pacote** `services/<nome>/` copiando `maintenance_notification/`:
-   * `contracts.py` — `SERVICE = SoapServiceSpec(key="<nome>", namespace=..., binding=..., default_wsdl=...)`, modelos
-     `SoapModel` por tipo do XSD (alias = nome do elemento; `X | None = None` p/ `minOccurs=0`/`nillable`) e
-     `SoapOperation(service=SERVICE, name="MinhaOp", request_model=..., response_model=..., idempotent=True|False,
-     fault_model=..., fault_element=...)`. **`idempotent=False` desativa retry após o envio.**
-   * `schemas.py` — contratos REST (Pydantic); `mappers.py` — conversões explícitas e `_carry` para não perder o
-     tri-estado; `service.py` — orquestração e tradução de faults de domínio (`translate_fault`); `router.py` — rotas
-     com `response_model`, `responses`, `CurrentCredentials`.
-3. **Registro** em `main.py`: instancie o serviço (`app.state.<x>_service = ...`), `app.include_router(...)` e
-   acrescente a chave em `app.state.service_keys` (readiness).
-4. **Configuração**: `APP_SOAP_SERVICES__<KEY>__ENDPOINT_URL` etc. (a chave é o `key` do `SoapServiceSpec`).
-5. **Testes**: espelhe `tests/` (mapeadores, tri-estado, rotas contra o mock). Nada de infraestrutura é duplicada:
-   credenciais, sessão, retry, métricas, spans e logs vêm do `SoapGateway`.
+1. Coloque o WSDL/XSD em `src/sap_gateway/wsdl/` (ou aponte `…__WSDL` para arquivo local/URL).
+2. Copie `services/maintenance_notification/`: `contracts.py` (modelos `SapModel` + `BINDING`), `schemas.py` (REST),
+   `service.py` (monta o modelo, `soap.call(...)`, converte), `router.py` (rotas com `response_model`/`responses`/
+   `CurrentCredentials`).
+3. Em `main.py`: instancie o `SoapService` (nome, binding, `settings.soap_service("<chave>")`, `default_wsdl`), o serviço
+   do caso de uso, `include_router`, e acrescente o `SoapService` em `app.state.soap_services` (readiness).
+4. Configure `APP_SOAP_SERVICES__<CHAVE>__ENDPOINT_URL` etc.
+5. Teste contra o mock ou crie um novo. Credenciais, sessão, retry, métricas, spans e logs vêm do `SoapService`.
 
 ## Erros, timeouts e retries
 
@@ -312,14 +337,13 @@ confirmando que esses testes falham.
 | Sem autorização no SAP | 403 | `forbidden` | `authorization` |
 | Entrada inválida | 422 | `validation_error` | – |
 | Fault de domínio (ex.: nota inexistente) | 404 / 422 | `not_found` / `business_rule_violation` | `not_found` / `business_rule` |
-| WSDL/XSD indisponível ou endpoint inseguro | 503 | `soap_contract_unavailable` | `wsdl_unavailable` |
+| WSDL/XSD indisponível, endpoint ausente ou sem TLS (fora de local/test) | 503 | `soap_contract_unavailable` | `wsdl_unavailable` |
 | Conexão recusada/DNS/TLS | 502 | `soap_connection_error` | `connection` |
 | Timeout de conexão/leitura | 504 | `soap_timeout` | `timeout` |
 | HTTP ≠ 200/SOAP do SAP (4xx/5xx, redirect) | 502 | `soap_transport_error` | `http_status` |
 | SOAP Fault não mapeado | 502 | `soap_fault` | `soap_fault` |
-| XML malformado / elemento inesperado | 502 | `soap_malformed_response` | `malformed_response` |
-| Resposta fora do contrato (enum, tipo) | 502 | `contract_mismatch` | `contract_mismatch` |
-| Falha ao serializar a requisição (defeito de mapeamento) | 500 | `soap_serialization_error` | `serialization` |
+| XML malformado, resposta fora do modelo ou código desconhecido | 502 | `soap_response_error` | `invalid_response` |
+| Falha ao montar a requisição (alias/modelo errado) | 500 | `soap_request_error` | `serialization` |
 | Inesperado | 500 | `internal_error` | – |
 
 Mensagens são fixas: nunca contêm faultstring, corpo, URL interna, stack trace ou credenciais (testado).
@@ -471,7 +495,7 @@ indica a categoria (tabela de erros). Disponibilidade: `app_health_status`.
 ## Testes, Ruff e qualidade
 
 ```bash
-uv run pytest                    # unit + integração (usa o mock SAP em processo; sem Docker)  → 194 passam, 4 e2e pulados
+uv run pytest                    # unit + integração (usa o mock SAP em processo; sem Docker)  → 171 passam, 4 e2e pulados
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src                  # tipagem estática
 RUN_E2E=1 uv run pytest tests/e2e -v   # com `docker compose up -d`: prova a chegada dos 3 sinais ao Alloy e ao Tempo/Loki/Prometheus
@@ -479,8 +503,8 @@ RUN_E2E=1 uv run pytest tests/e2e -v   # com `docker compose up -d`: prova a che
 
 | Camada | Cobertura |
 |---|---|
-| `tests/unit` | config; aliases/serialização/validação; tri-estado XML; Zeep→estrutura (namespaces/prefixos, repetidos, vazios, nil); mapeadores e exaustividade de códigos; erros→HTTP; retry/backoff; sanitização; transporte e anti-SSRF; auth |
-| `tests/integration` | rotas FastAPI contra o mock real (Zeep + requests); encaminhamento Basic/WS-Security; isolamento e concorrência; timeouts, conexão recusada, 503, XML inválido, WSDL indisponível/remoto; retries por idempotência; traces/métricas/logs em exporters em memória; usuário em logs/traces e ausente das métricas; ausência de senha em tudo; **exportação OTLP real** verificada num receptor gRPC e num HTTP/protobuf locais; coletor fora do ar |
+| `tests/unit` | config; aliases/`to_soap`/`SapStr`; XML gerado (`xml_request`); carga e endpoint do WSDL; tradução de exceções (transporte, Fault, Zeep); erros→HTTP; matriz de retry/backoff; sanitização; sessão/transporte; auth |
+| `tests/integration` | rotas FastAPI contra o mock real (Zeep + requests); encaminhamento Basic/WS-Security; isolamento e concorrência; timeouts, conexão recusada, 503, XML inválido, WSDL indisponível/remoto; retries por idempotência; tabelas de código; traces/métricas/logs em exporters em memória; usuário em logs/traces e ausente das métricas; ausência de senha em tudo; **exportação OTLP real** verificada num receptor gRPC e num HTTP/protobuf locais; coletor fora do ar |
 | `tests/e2e` | API → Alloy → Tempo/Loki/Prometheus reais, consultando as APIs dos backends |
 
 ## Privacidade e retenção
@@ -502,7 +526,7 @@ as **46 consultas dos dashboards** foram executadas via API do Grafana contra da
 **Limitações / pendências**
 
 * **Sem SAP real**: o WSDL é de exemplo; faults, códigos e particularidades de um SAP concreto (ex.: BAPI, `Z*`,
-  XML com atributos, `choice`, `xsd:any`) exigem ajuste de contratos e, se houver atributos XML/`anyType`, evolução de `plain.py`.
+  XML com atributos, `choice`, `xsd:any`) exigem ajuste dos modelos; o `serialize_object` do Zeep cobre o caso comum.
 * O **Zeep não documenta thread-safety** do `Document` compartilhado; adotamos uso somente-leitura e há teste com 120 requisições
   concorrentes, mas não é garantia formal. Alternativa: um `Document` por worker/thread.
 * A API **não valida a senha** (o SAP valida): um usuário inválido consome uma chamada SOAP. Considere *rate limiting* no gateway/WAF.
@@ -510,6 +534,8 @@ as **46 consultas dos dashboards** foram executadas via API do Grafana contra da
 * `OTEL_EXPORTER_OTLP_*` específicos por sinal e `OTEL_RESOURCE_ATTRIBUTES` além do básico não foram expostos; só as variáveis da tabela.
 * `service.instance.id` aleatório por processo gera séries novas a cada reinício (churn esperado no Prometheus).
 * Compose é de **desenvolvimento** (Tempo como root, Grafana `admin/admin`, sem TLS/autenticação nos backends, sem alertas).
+* Escolhas de simplificação (podem ser reavaliadas): sem distinção ausente/`nil`/vazio, sem restrição de hosts para `xsd:import`
+  (destinos são definidos por quem configura), WSDL por URL carregado com a credencial do primeiro chamador se não houver credencial técnica.
 * A imagem Docker foi construída e executada aqui, mas com um Dockerfile auxiliar que confia no CA do proxy do sandbox
   (o proxy re-termina TLS); `docker compose --profile app build` direto não pôde ser exercitado neste ambiente.
 * “Disponibilidade operacional” usa o gauge `app_health_status`; ausência de dados = processo fora do ar (não há `up`

@@ -20,6 +20,8 @@ from urllib.parse import urlparse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+PACKAGED_WSDL = Path(__file__).resolve().parent / "wsdl"
+
 Environment = Literal["local", "test", "staging", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -79,15 +81,15 @@ class SoapServiceSettings(BaseModel):
         description="Sobrescreve o soap:address do WSDL (ex.: URL por ambiente).",
     )
     auth_mode: SoapAuthMode = SoapAuthMode.HTTP_BASIC
+    strict: bool = Field(
+        default=False,
+        description="Zeep strict. SAP costuma sair do XSD (ordem, extras): padrão tolerante.",
+    )
     connect_timeout_seconds: float = Field(default=5.0, gt=0)
     read_timeout_seconds: float = Field(default=30.0, gt=0)
     wsdl_timeout_seconds: float = Field(default=15.0, gt=0)
     retry: RetrySettings = RetrySettings()
     tls: TlsSettings = TlsSettings()
-    allowed_hosts: Annotated[tuple[str, ...], NoDecode] = Field(
-        default=(),
-        description="Hosts adicionais permitidos para imports de WSDL/XSD (além do host do WSDL).",
-    )
     proxy_url: str | None = Field(
         default=None, description="Proxy HTTP(S) explícito (variáveis HTTP(S)_PROXY são ignoradas)."
     )
@@ -109,13 +111,6 @@ class SoapServiceSettings(BaseModel):
     def _http_scheme(cls, value: str | None) -> str | None:
         if value and urlparse(value).scheme not in {"http", "https"}:
             raise ValueError("endpoint_url deve usar http ou https")
-        return value
-
-    @field_validator("allowed_hosts", mode="before")
-    @classmethod
-    def _csv_hosts(cls, value: object) -> object:
-        if isinstance(value, str):
-            return tuple(item.strip() for item in value.split(",") if item.strip())
         return value
 
 
