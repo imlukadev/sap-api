@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Contrato de exemplo (estilo SAP PM) usado para demonstrar a infraestrutura SOAP.
+  Substitua por WSDL/XSD reais exportados do SOAMANAGER ao integrar um sistema SAP.
+-->
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            xmlns:tns="urn:example:sap:pm:notification:v1"
+            targetNamespace="urn:example:sap:pm:notification:v1"
+            elementFormDefault="qualified">
+
+  <xsd:simpleType name="NotificationId">
+    <xsd:restriction base="xsd:string">
+      <xsd:pattern value="[0-9]{12}"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+
+  <xsd:simpleType name="NotificationTypeCode">
+    <xsd:restriction base="xsd:string">
+      <xsd:enumeration value="M1"/>
+      <xsd:enumeration value="M2"/>
+      <xsd:enumeration value="M3"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+
+  <xsd:simpleType name="PriorityCode">
+    <xsd:restriction base="xsd:string">
+      <xsd:enumeration value="1"/>
+      <xsd:enumeration value="2"/>
+      <xsd:enumeration value="3"/>
+      <xsd:enumeration value="4"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+
+  <xsd:simpleType name="StatusCode">
+    <xsd:restriction base="xsd:string">
+      <xsd:enumeration value="OSNO"/>
+      <xsd:enumeration value="NOPR"/>
+      <xsd:enumeration value="NOCO"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+
+  <xsd:simpleType name="MessageSeverity">
+    <xsd:restriction base="xsd:string">
+      <xsd:enumeration value="S"/>
+      <xsd:enumeration value="I"/>
+      <xsd:enumeration value="W"/>
+      <xsd:enumeration value="E"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+
+  <xsd:complexType name="NotificationHeader">
+    <xsd:sequence>
+      <xsd:element name="NotificationType" type="tns:NotificationTypeCode"/>
+      <xsd:element name="Description">
+        <xsd:simpleType>
+          <xsd:restriction base="xsd:string">
+            <xsd:maxLength value="40"/>
+          </xsd:restriction>
+        </xsd:simpleType>
+      </xsd:element>
+      <xsd:element name="Priority" type="tns:PriorityCode" minOccurs="0"/>
+      <xsd:element name="Plant">
+        <xsd:simpleType>
+          <xsd:restriction base="xsd:string">
+            <xsd:length value="4"/>
+          </xsd:restriction>
+        </xsd:simpleType>
+      </xsd:element>
+      <xsd:element name="FunctionalLocation" type="xsd:string" minOccurs="0"/>
+      <xsd:element name="ReportedBy" type="xsd:string" minOccurs="0" nillable="true"/>
+      <xsd:element name="RequiredStart" type="xsd:date" minOccurs="0"/>
+      <xsd:element name="PlannedCost" type="xsd:decimal" minOccurs="0" nillable="true"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:complexType name="NotificationItem">
+    <xsd:sequence>
+      <xsd:element name="ItemNumber" type="xsd:int"/>
+      <xsd:element name="Description" type="xsd:string" minOccurs="0"/>
+      <xsd:element name="DamageCode" type="xsd:string" minOccurs="0" nillable="true"/>
+      <xsd:element name="Quantity" type="xsd:decimal" minOccurs="0"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:complexType name="NotificationItemList">
+    <xsd:sequence>
+      <xsd:element name="Item" type="tns:NotificationItem" minOccurs="0" maxOccurs="unbounded"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:complexType name="LongText">
+    <xsd:sequence>
+      <xsd:element name="TextLine" type="xsd:string" minOccurs="0" maxOccurs="unbounded"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:complexType name="Attribute">
+    <xsd:sequence>
+      <xsd:element name="Name" type="xsd:string"/>
+      <xsd:element name="Value" type="xsd:string" nillable="true"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:complexType name="AttributeList">
+    <xsd:sequence>
+      <xsd:element name="Attribute" type="tns:Attribute" minOccurs="0" maxOccurs="unbounded"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:complexType name="NotificationData">
+    <xsd:sequence>
+      <xsd:element name="NotificationId" type="tns:NotificationId"/>
+      <xsd:element name="Header" type="tns:NotificationHeader"/>
+      <xsd:element name="Status" type="tns:StatusCode"/>
+      <xsd:element name="CreatedOn" type="xsd:date"/>
+      <xsd:element name="CreatedAt" type="xsd:dateTime"/>
+      <xsd:element name="Items" type="tns:NotificationItemList" minOccurs="0"/>
+      <xsd:element name="LongText" type="tns:LongText" minOccurs="0"/>
+      <xsd:element name="Attributes" type="tns:AttributeList" minOccurs="0"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:complexType name="NotificationSummary">
+    <xsd:sequence>
+      <xsd:element name="NotificationId" type="tns:NotificationId"/>
+      <xsd:element name="Description" type="xsd:string"/>
+      <xsd:element name="Status" type="tns:StatusCode"/>
+      <xsd:element name="Priority" type="tns:PriorityCode" minOccurs="0"/>
+      <xsd:element name="CreatedOn" type="xsd:date"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:complexType name="Message">
+    <xsd:sequence>
+      <xsd:element name="Severity" type="tns:MessageSeverity"/>
+      <xsd:element name="Text" type="xsd:string"/>
+    </xsd:sequence>
+  </xsd:complexType>
+
+  <xsd:element name="NotificationReadRequest">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="NotificationId" type="tns:NotificationId"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+
+  <xsd:element name="NotificationReadResponse">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="Notification" type="tns:NotificationData"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+
+  <xsd:element name="NotificationCreateRequest">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="Header" type="tns:NotificationHeader"/>
+        <xsd:element name="Items" type="tns:NotificationItemList" minOccurs="0"/>
+        <xsd:element name="LongText" type="tns:LongText" minOccurs="0"/>
+        <xsd:element name="Attributes" type="tns:AttributeList" minOccurs="0"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+
+  <xsd:element name="NotificationCreateResponse">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="NotificationId" type="tns:NotificationId"/>
+        <xsd:element name="Messages" minOccurs="0">
+          <xsd:complexType>
+            <xsd:sequence>
+              <xsd:element name="Message" type="tns:Message" minOccurs="0" maxOccurs="unbounded"/>
+            </xsd:sequence>
+          </xsd:complexType>
+        </xsd:element>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+
+  <xsd:element name="NotificationSearchRequest">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="Plant" type="xsd:string" minOccurs="0"/>
+        <xsd:element name="Status" type="tns:StatusCode" minOccurs="0"/>
+        <xsd:element name="CreatedFrom" type="xsd:date" minOccurs="0"/>
+        <xsd:element name="CreatedTo" type="xsd:date" minOccurs="0"/>
+        <xsd:element name="MaxResults" type="xsd:int" minOccurs="0" default="50"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+
+  <xsd:element name="NotificationSearchResponse">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="Notifications" minOccurs="0">
+          <xsd:complexType>
+            <xsd:sequence>
+              <xsd:element name="Notification" type="tns:NotificationSummary" minOccurs="0"
+                           maxOccurs="unbounded"/>
+            </xsd:sequence>
+          </xsd:complexType>
+        </xsd:element>
+        <xsd:element name="Truncated" type="xsd:boolean"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+
+  <xsd:element name="NotificationFault">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="Code" type="xsd:string"/>
+        <xsd:element name="Message" type="xsd:string"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+</xsd:schema>
