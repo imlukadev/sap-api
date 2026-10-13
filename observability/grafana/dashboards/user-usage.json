@@ -1,0 +1,633 @@
+{
+  "uid": "sap-gw-user-usage",
+  "title": "SAP Gateway · Uso por usuário",
+  "description": "Quem usou quais rotas e operações SOAP. Baseado em LOGS e TRACES (nunca em métricas): username é structured metadata no Loki e enduser.id nos spans.",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "tags": [
+    "sap-gateway"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "DS_LOKI",
+        "label": "Loki",
+        "query": "loki",
+        "hide": 0,
+        "current": {
+          "selected": false,
+          "text": "Loki",
+          "value": "loki"
+        },
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "type": "datasource",
+        "name": "DS_TEMPO",
+        "label": "Tempo",
+        "query": "tempo",
+        "hide": 0,
+        "current": {
+          "selected": false,
+          "text": "Tempo",
+          "value": "tempo"
+        },
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "type": "datasource",
+        "name": "DS_PROM",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "hide": 0,
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "type": "query",
+        "name": "env",
+        "label": "Ambiente",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROM}"
+        },
+        "query": {
+          "query": "label_values(http_server_request_duration_seconds_count, deployment_environment)",
+          "refId": "env"
+        },
+        "definition": "label_values(http_server_request_duration_seconds_count, deployment_environment)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "type": "textbox",
+        "name": "username",
+        "label": "Usuário (regex)",
+        "query": ".*",
+        "current": {
+          "selected": false,
+          "text": ".*",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "type": "textbox",
+        "name": "route",
+        "label": "Rota (regex)",
+        "query": ".*",
+        "current": {
+          "selected": false,
+          "text": ".*",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "Dashboards SAP Gateway",
+      "tags": [
+        "sap-gateway"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "title": "Como usar",
+      "options": {
+        "mode": "markdown",
+        "content": "**Dados pessoais:** `username` identifica pessoas; restrinja o acesso a este dashboard e respeite a retenção definida (Loki 7 dias neste ambiente).  \nFiltre pelo campo **Usuário (regex)** — ex.: `alice` ou `alice|bob`. Em um log, o link **Abrir trace** (campo `trace_id`) leva ao trace completo, inclusive às chamadas SOAP."
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Usuários que mais utilizam a API",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "topk(10, sum by (username) (count_over_time({service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"http request completed\" | username=~\"$username\" | username!=\"\" [$__range])))",
+          "legendFormat": "{{username}}",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "top",
+        "minVizHeight": 18,
+        "minVizWidth": 8,
+        "sizing": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requisições por usuário",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "sum by (username) (count_over_time({service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"http request completed\" | username=~\"$username\" | username!=\"\" [$__interval]))",
+          "legendFormat": "{{username}}",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 20,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 8,
+        "y": 3,
+        "w": 16,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Rotas acessadas por usuário",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "sum by (username, http_request_method, http_route) (count_over_time({service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"http request completed\" | username=~\"$username\" | username!=\"\" | http_route=~\"$route\" [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "requisições",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "requisições",
+              "username": "usuário",
+              "http_request_method": "método",
+              "http_route": "rota"
+            }
+          }
+        }
+      ],
+      "id": 4,
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Operações SOAP executadas por usuário",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "sum by (username, soap_service, soap_operation) (count_over_time({service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"soap call\" | soap_operation!=\"\" | username=~\"$username\" | username!=\"\" [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "chamadas",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "chamadas",
+              "username": "usuário",
+              "soap_service": "serviço",
+              "soap_operation": "operação"
+            }
+          }
+        }
+      ],
+      "id": 5,
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Erros por usuário",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "sum by (username, error_type, http_response_status_code) (count_over_time({service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"http request completed\" | username=~\"$username\" | username!=\"\" | error_type!=\"\" [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "ocorrências",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "ocorrências",
+              "username": "usuário",
+              "error_type": "tipo de erro",
+              "http_response_status_code": "status"
+            }
+          }
+        }
+      ],
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latência p95 por usuário",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "quantile_over_time(0.95, {service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"http request completed\" | username=~\"$username\" | username!=\"\" | unwrap duration_ms [$__interval]) by (username)",
+          "legendFormat": "{{username}}",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Requisições (logs estruturados)",
+      "description": "Clique em uma linha → campo TraceID → abrir trace.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "{service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"http request completed\" | username=~\"$username\" | username!=\"\" | http_route=~\"$route\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "type": "table",
+      "title": "Traces do usuário (Tempo / TraceQL)",
+      "description": "Cada linha é um trace; abra para ver a sequência HTTP → SOAP → HTTP do SAP.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
+          "queryType": "traceql",
+          "query": "{ span.enduser.id =~ \"$username\" && kind = server }",
+          "limit": 50,
+          "tableType": "traces",
+          "filters": []
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 9
+      }
+    }
+  ]
+}

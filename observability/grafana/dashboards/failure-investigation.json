@@ -1,0 +1,570 @@
+{
+  "uid": "sap-gw-failures",
+  "title": "SAP Gateway · Investigação de falhas",
+  "description": "Localize falhas por período, rota, usuário, operação SOAP e tipo de erro, e navegue de log para trace.",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "tags": [
+    "sap-gateway"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "DS_LOKI",
+        "label": "Loki",
+        "query": "loki",
+        "hide": 0,
+        "current": {
+          "selected": false,
+          "text": "Loki",
+          "value": "loki"
+        },
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "type": "datasource",
+        "name": "DS_TEMPO",
+        "label": "Tempo",
+        "query": "tempo",
+        "hide": 0,
+        "current": {
+          "selected": false,
+          "text": "Tempo",
+          "value": "tempo"
+        },
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "type": "datasource",
+        "name": "DS_PROM",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "hide": 0,
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "options": [],
+        "refresh": 1,
+        "regex": "",
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "type": "query",
+        "name": "env",
+        "label": "Ambiente",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROM}"
+        },
+        "query": {
+          "query": "label_values(http_server_request_duration_seconds_count, deployment_environment)",
+          "refId": "env"
+        },
+        "definition": "label_values(http_server_request_duration_seconds_count, deployment_environment)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "type": "textbox",
+        "name": "username",
+        "label": "Usuário (regex)",
+        "query": ".*",
+        "current": {
+          "selected": false,
+          "text": ".*",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "type": "textbox",
+        "name": "route",
+        "label": "Rota (regex)",
+        "query": ".*",
+        "current": {
+          "selected": false,
+          "text": ".*",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "type": "textbox",
+        "name": "soap_operation",
+        "label": "Operação SOAP (regex)",
+        "query": ".*",
+        "current": {
+          "selected": false,
+          "text": ".*",
+          "value": ".*"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "type": "textbox",
+        "name": "error_type",
+        "label": "Tipo de erro (regex)",
+        "query": ".+",
+        "current": {
+          "selected": false,
+          "text": ".+",
+          "value": ".+"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": ".+",
+            "value": ".+"
+          }
+        ],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "Dashboards SAP Gateway",
+      "tags": [
+        "sap-gateway"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "title": "Fluxo de investigação",
+      "options": {
+        "mode": "markdown",
+        "content": "1. **Quando** — veja os picos de falhas abaixo e ajuste o período.  \n2. **Quem/onde** — filtre por usuário, rota, operação SOAP ou tipo de erro (regex).  \n3. **Por quê** — na lista de logs, abra o campo **TraceID → Abrir trace**; no trace, o botão *Logs* mostra os logs do mesmo `trace_id`.  \nTipos de erro: `soap_fault`, `timeout`, `connection`, `http_status`, `malformed_response`, `contract_mismatch`, `authentication`, `authorization`, `wsdl_unavailable`, `not_found`, ..."
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Respostas HTTP 4xx/5xx por rota",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROM}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROM}"
+          },
+          "expr": "sum by (http_route, http_response_status_code) (increase(http_server_request_duration_seconds_count{deployment_environment=~\"$env\",http_response_status_code=~\"[45]..\"}[$__rate_interval]))",
+          "legendFormat": "{{http_route}} · {{http_response_status_code}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 20,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Falhas SOAP por categoria",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROM}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROM}"
+          },
+          "expr": "sum by (soap_operation, error_type) (increase(soap_client_calls_total{deployment_environment=~\"$env\",error_type=~\".+\"}[$__rate_interval]))",
+          "legendFormat": "{{soap_operation}} · {{error_type}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 20,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Falhas por usuário (logs)",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "label_replace(sum by (username) (count_over_time({service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"http request completed\" | error_type=~\"$error_type\" | username=~\"$username\" | http_route=~\"$route\" | soap_operation=~\"$soap_operation\" [$__interval])), \"username\", \"(sem usuário)\", \"username\", \"^$\")",
+          "legendFormat": "{{username}}",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 20,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Falhas por rota, usuário e erro",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "sum by (http_route, username, error_type, soap_operation) (count_over_time({service_name=\"sap-gateway\", deployment_environment=~\"$env\"} |= \"http request completed\" | error_type=~\"$error_type\" | username=~\"$username\" | http_route=~\"$route\" | soap_operation=~\"$soap_operation\" [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "ocorrências",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "ocorrências",
+              "http_route": "rota",
+              "username": "usuário",
+              "error_type": "erro",
+              "soap_operation": "operação SOAP"
+            }
+          }
+        }
+      ],
+      "id": 5,
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Logs de falha (com link para o trace)",
+      "description": "Inclui logs de acesso e de chamadas SOAP com error_type. Campo TraceID → abrir trace.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "{service_name=\"sap-gateway\", deployment_environment=~\"$env\"} | error_type=~\"$error_type\" | username=~\"$username\" | http_route=~\"$route\" | soap_operation=~\"$soap_operation\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 11
+      }
+    },
+    {
+      "type": "table",
+      "title": "Traces com erro (Tempo / TraceQL)",
+      "description": "Spans em erro. O span SOAP traz soap.operation, soap.attempts e error.type.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
+          "queryType": "traceql",
+          "query": "{ status = error && span.enduser.id =~ \"$username\" }",
+          "limit": 50,
+          "tableType": "traces",
+          "filters": []
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "table",
+      "title": "Traces lentos (> 1 s)",
+      "description": "Requisições com mais de 1 segundo — inclua retries e timeouts SOAP.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
+          "queryType": "traceql",
+          "query": "{ kind = server && duration > 1s }",
+          "limit": 50,
+          "tableType": "traces",
+          "filters": []
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 9
+      }
+    }
+  ]
+}

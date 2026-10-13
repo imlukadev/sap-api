@@ -1,0 +1,48 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000
+      # Log → Trace: trace_id é structured metadata do registro OTLP (campo nativo, não extraído do texto).
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: Abrir trace
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      # Trace → Logs: consulta o trace_id (structured metadata) em uma janela ao redor do span.
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        filterByTraceID: false
+        filterBySpanID: false
+        customQuery: true
+        query: '{service_name=~".+"} | trace_id="$${__trace.traceId}"'
+      search:
+        hide: false
+      nodeGraph:
+        enabled: false

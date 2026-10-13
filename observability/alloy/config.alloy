@@ -1,0 +1,67 @@
+// Grafana Alloy — único ponto de entrada de telemetria da API (OTLP).
+//
+//   API ──OTLP(gRPC 4317 | HTTP 4318)──► Alloy ──┬─ traces ─► Tempo      (OTLP gRPC)
+//                                                ├─ logs   ─► Loki       (OTLP/HTTP nativo, /otlp)
+//                                                └─ métricas► Prometheus (remote write)
+//
+// Os logs JSON do stdout da API NÃO são coletados aqui (evita duplicidade com o pipeline OTLP).
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces  = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    metrics = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Sem transformações que removam atributos: usuário, rota, operação SOAP etc. seguem intactos.
+otelcol.processor.batch "default" {
+  output {
+    traces  = [otelcol.exporter.otlp.tempo.input]
+    logs    = [otelcol.exporter.otlphttp.loki.input]
+    metrics = [otelcol.exporter.prometheus.default.input]
+  }
+}
+
+// ---- Traces → Tempo ---------------------------------------------------------------------------
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// ---- Logs → Loki (endpoint OTLP nativo) -------------------------------------------------------
+// Loki indexa só os resource attributes definidos em loki.yaml (service.name, deployment.environment).
+// Os demais atributos (username, trace_id, span_id, http.route, ...) viram *structured metadata*:
+// pesquisáveis, mas sem custo de cardinalidade no índice.
+otelcol.exporter.otlphttp "loki" {
+  client {
+    endpoint = "http://loki:3100/otlp"
+  }
+}
+
+// ---- Métricas → Prometheus (remote write) -----------------------------------------------------
+// resource_to_telemetry_conversion: service.name, deployment.environment etc. viram labels
+// (todos de cardinalidade baixa e estável).
+otelcol.exporter.prometheus "default" {
+  resource_to_telemetry_conversion = true
+  forward_to                       = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.remote_write "local" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}

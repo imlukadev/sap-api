@@ -1,0 +1,130 @@
+# Ambiente local de observabilidade: Alloy → (Tempo | Loki | Prometheus) → Grafana.
+#
+#   docker compose up -d                 # infraestrutura (a API roda no host: `uv run sap-gateway`)
+#   docker compose --profile app up -d   # + mock SAP e API em containers (demonstração completa)
+#   docker compose down                  # encerra (mantém volumes)   |   down -v  → apaga os dados
+#
+# Todas as portas são publicadas somente em 127.0.0.1. Credenciais abaixo são de DESENVOLVIMENTO.
+name: sap-gateway-observability
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  alloy:
+    <<: *restart
+    image: grafana/alloy:v1.20.1
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      - "127.0.0.1:${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
+      - "127.0.0.1:${ALLOY_UI_PORT:-12345}:12345"
+    depends_on:
+      - tempo
+      - loki
+      - prometheus
+
+  tempo:
+    <<: *restart
+    image: grafana/tempo:2.9.0
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    # Somente desenvolvimento: o volume nomeado nasce como root e a imagem do Tempo não tem shell
+    # para um chown prévio. Em produção use um volume com dono 10001.
+    user: "0:0"
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "127.0.0.1:${TEMPO_PORT:-3200}:3200"
+
+  loki:
+    <<: *restart
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+
+  prometheus:
+    <<: *restart
+    image: prom/prometheus:v3.15.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      # Estratégia de métricas: Alloy converte OTLP → Prometheus e envia por remote write.
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+
+  grafana:
+    <<: *restart
+    image: grafana/grafana:13.2.3
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/api-overview.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - tempo
+      - loki
+      - prometheus
+
+  # --- Perfil "app": demonstração completa dentro do Compose -------------------------------------
+  mock-sap:
+    profiles: [app]
+    build: .
+    command: ["mock-sap"]
+    environment:
+      MOCK_SAP_HOST: 0.0.0.0
+      MOCK_SAP_USERS: ${MOCK_SAP_USERS:-}
+    ports:
+      - "127.0.0.1:${MOCK_SAP_PORT:-8081}:8081"
+
+  gateway:
+    profiles: [app]
+    build: .
+    command: ["sap-gateway"]
+    environment:
+      APP_ENVIRONMENT: local
+      APP_HOST: 0.0.0.0
+      APP_SOAP_SERVICES__MAINTENANCE_NOTIFICATION__ENDPOINT_URL: http://mock-sap:8081/soap/maintenance-notification
+      APP_OTEL_TRACES_ENABLED: "true"
+      APP_OTEL_METRICS_ENABLED: "true"
+      APP_OTEL_LOGS_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_METRIC_EXPORT_INTERVAL: "5000"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    depends_on:
+      - alloy
+      - mock-sap
+
+volumes:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:
+  alloy-data:
